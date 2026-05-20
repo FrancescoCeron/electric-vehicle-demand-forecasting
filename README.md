@@ -11,6 +11,7 @@ The following forecasting methods were implemented and compared:
 - ARIMAX
 - Exponential Smoothing
 - Generalized Additive Models (GAM).
+
 The project also includes an exploratory implementation of the Bass diffusion model for technology adoption analysis.
 
 ## Dataset
