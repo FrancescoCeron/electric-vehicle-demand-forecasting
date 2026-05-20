@@ -32,3 +32,15 @@ Additional exogenous variables include:
 - ARIMAX models improved forecasting performance by incorporating external variables
 - GAM + ARIMA approaches provided flexible modeling of nonlinear patterns
 - Damped Holt exponential smoothing achieved strong short-term forecasting performance
+
+## Technologies
+- R
+- Forecast package
+- mgcv
+- Time Series Analysis
+- Econometrics
+
+## Authors
+- Francesco Ceron
+- Emanuele Cavaliero
+
