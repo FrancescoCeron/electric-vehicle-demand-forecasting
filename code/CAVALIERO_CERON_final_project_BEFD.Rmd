@@ -1,0 +1,2520 @@
+---
+title: "project befd"
+output: html_document
+date: "2025-06-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list=ls())
+library(forecast)
+library(tseries)
+library(ggplot2)
+library(dplyr)
+library(car)
+library(zoo)
+library(tidyr)     
+
+```
+
+#DATA 
+```{r}
+
+electric_Uk <- ts(c(
+  5.664, 5.836, 6.156, 6.274, 6.574, 6.739, 6.942, 7.045,
+  7.282, 7.794, 6.094, 6.816, 7.447, 8.200, 8.469, 8.979,
+  9.846, 10.972, 11.173, 11.874, 12.477, 13.695, 14.352, 15.293,
+  15.745, 17.234, 18.206, 19.422, 20.988, 23.569, 26.484, 32.334,
+  40.178, 51.888, 59.835, 84.080, 115.896, 139.511, 167.214, 196.287,
+  240.619, 282.317, 313.555, 350.134, 415.145, 463.688, 514.090, 566.842,
+  611.410, 659.014, 702.820
+  ), start = c(2011, 1), frequency = 4)
+
+#original has 0,0,0,0,0 and starts from 2011 Q1 if we want to compare
+hybrid_uk <- ts(c(12, 26, 36, 52, 91, 134, 144, 158, 190, 204, 221, 243, 263, 297, 410, 515, 
+               594, 670, 716, 771, 812, 831, 829, 819, 854, 1038, 1219, 1479, 1732, 1911,
+               2457, 3455, 4217, 4837, 5180, 5852, 6411, 6679, 6814, 6681, 6434, 6296,
+               6101, 5777, 5325, 4917),start=c(2013,1),frequency=4)
+length(electric_Uk)
+length(hybrid_uk)
+
+```
+
+```{r}
+ts_ev_uk <- window(electric_Uk, start = c(2016, 1))
+ts_hybrid_uk <- window(hybrid_uk, start = c(2016, 1))
+
+par(mfrow = c(1, 2))
+plot(ts_ev_uk,
+     main = 'Electric car number of licences in UK\n(2016–2024)',
+     ylab = 'Licenses (thousands)', xlab = 'Year', cex.main = 0.9)
+
+plot(ts_hybrid_uk / 1000,
+     main = 'Hybrid car number of licences in UK\n(2016–2022)',
+     ylab = 'Licenses (thousands)', xlab = 'Year', cex.main = 0.9)
+
+par(mfrow = c(1, 1))
+
+```
+As we can see, after covid19 both the time series have an exponential growth. The hybrid one has a decline in its last period(maybe a saturation due to the electric)
+
+#Plotting the ts+Acf and Pacf
+```{r}
+tsdisplay(ts_ev_uk, main = 'Electric car number of licences(thousands)')
+```
+```{r}
+tsdisplay(ts_hybrid_uk / 1000, main = 'Hybrid car number of licences (thousands)')
+```
+It's easy to see that both of them are not stationary. 
+
+#We also try a log-transformation
+```{r}
+par(mfrow=c(1,2))
+plot(log(ts_ev_uk), main='Electric car log-number of licences in UK\n(2016–2024)', ylab='Sales', xlab='Year', cex.main=0.9)
+plot(log(ts_hybrid_uk), main='Hybrid car log-number of licences in UK\n(2016–2024)', ylab='Sales', xlab='Year', cex.main=0.9)
+par(mfrow=c(1,1))
+
+#log
+```
+```{r}
+tsdisplay(log(ts_ev_uk), main='Electric car log-number of licences in UK\n(2016–2024)')
+``` 
+
+```{r}
+tsdisplay(log(ts_hybrid_uk), main='Hybrid car log-number of licences in UK\n(2016–2024)')
+```
+
+Also the log-transformations require differentiations!
+
+
+```{r}
+# plotting the ACF on original ts electric
+par(mfrow = c(2,2))
+acf(ts_ev_uk, lag.max = 32, main = "Original")
+acf(diff(ts_ev_uk), lag.max = 32, main = "Non-seasonal diff")
+acf(diff(ts_ev_uk, lag = 4), lag.max = 32, main = "Seasonal diff")
+#seasonal+non-seasonal
+acf(diff(diff(ts_ev_uk, lag = 4)), lag.max = 32, main = "Seasonal + Non-seasonal diff")
+
+par(mfrow = c(1, 1))
+```
+So we need two differentiations(seasonal+non-seasonal) on the time series of electric cars
+Let's also see the log-sales
+```{r}
+par(mfrow = c(2,2))
+acf(log(ts_ev_uk), lag.max = 32, main = "Original")
+acf(diff(log(ts_ev_uk)), lag.max = 32, main = "Non-seasonal diff")
+acf(diff(log(ts_ev_uk), lag = 4), lag.max = 60, main = "Seasonal diff")
+#seasonal+non-seasonal
+acf(diff(diff(log(ts_ev_uk), lag = 4)), lag.max = 60, main = "Seasonal + Non-seasonal diff")
+
+par(mfrow = c(1, 1))
+```
+Also on log we select seasonal+non-seasonal
+
+
+#Hybrid Cars
+
+
+```{r}
+par(mfrow = c(2,2))
+acf(ts_hybrid_uk, lag.max = 32, main = "Original")
+acf(diff(ts_hybrid_uk), lag.max = 32, main = "Non-seasonal diff")
+acf(diff(ts_hybrid_uk, lag = 4), lag.max = 32, main = "Seasonal diff")
+#seasonal+non-seasonal
+acf(diff(diff(ts_hybrid_uk, lag = 4)), lag.max = 32, main = "Seasonal + Non-seasonal diff")
+
+par(mfrow = c(1, 1))
+```
+
+
+
+```{r}
+par(mfrow = c(2,2))
+acf(log(ts_hybrid_uk), lag.max = 32, main = "log-Original")
+acf(diff(log(ts_hybrid_uk)), lag.max = 32, main = "log-Non-seasonal diff")
+acf(diff(log(ts_hybrid_uk), lag = 4), lag.max = 32, main = "log-Seasonal diff")
+#seasonal+non-seasonal
+acf(diff(diff(log(ts_hybrid_uk), lag = 4)), lag.max = 32, main = "log-Seasonal + Non-seasonal diff")
+
+par(mfrow = c(1, 1))
+```
+
+#Trying with two simple auto.arima(only to have an idea)
+```{r}
+mod_electric.auto=auto.arima(ts_ev_uk,trace=TRUE,approximation=FALSE,d=1,seasonal = TRUE)
+summary(mod_electric.auto)
+checkresiduals(mod_electric.auto) 
+
+```
+Trying manually
+
+```{r}
+mod_electric_manual <- Arima(ts_ev_uk, order = c(1,1,0), seasonal = c(0,0,1))
+summary(mod_electric_manual)
+checkresiduals(mod_electric_manual)
+
+```
+As we can see, even if the residuals are not correlated, a log-transformation of the time series may be appropriate in this case. 
+
+#Trying on log electric 
+
+
+```{r}
+y <- log(ts_ev_uk)
+#here we report the best 3 we have found after different experiments based on acf-pacf observations
+mod1 <- Arima(y, order = c(1,1,1), seasonal = list(order = c(1,0,0), period = 4))
+mod2 <- Arima(y, order = c(1,1,1), seasonal = list(order = c(0,0,1), period = 4))
+mod3 <- Arima(y, order = c(2,1,0), seasonal = list(order = c(1,0,0), period = 4))
+
+best_models <- list(mod1, mod2, mod3)
+metrics <- function(model, y) {
+  fitted_vals <- fitted(model)
+  resids <- residuals(model)
+  valid_idx <- which(!is.na(fitted_vals) & !is.na(y))
+  rmse <- sqrt(mean((y[valid_idx] - fitted_vals[valid_idx])^2))
+  mae  <- mean(abs(y[valid_idx] - fitted_vals[valid_idx]))
+  mape <- mean(abs((y[valid_idx] - fitted_vals[valid_idx]) / y[valid_idx])) * 100
+  
+  data.frame(
+    AIC = AIC(model),
+    LogLik = as.numeric(logLik(model)),
+    RMSE = rmse,
+    MAE = mae,
+    MAPE = mape
+  )
+}
+
+comparison <- do.call(rbind, lapply(best_models, metrics, y = y))
+rownames(comparison) <- paste0("Model_", 1:3)
+comparison <- comparison[order(comparison$AIC), ]
+print(comparison)
+
+
+```
+
+```{r}
+checkresiduals(mod1)
+print("_____________________________________________________________________________________")
+checkresiduals(mod2)
+print("_____________________________________________________________________________________")
+checkresiduals(mod3)
+
+```
+The models are similar, but we choose 1 since it reports:
+-best AIC value
+-best RMSE value
+
+```{r}
+best_arima_el=Arima(y, order = c(1,1,1), seasonal = list(order = c(1,0,0), period = 4))
+resid_el = residuals(best_arima_el)
+tsdisplay(resid_el, main='Residuals of electric car number of licences')
+
+```
+
+```{r}
+plot(y,main='Electric car log(number of licences)')
+lines(fitted(best_arima_el), col = 2)
+for_el <- forecast(best_arima_el)
+plot(for_el)
+```
+If we want to do comparison, we have to transform back the log-scale fitted series to the original data.
+We can see that the uncertainty is bigger as time grows. This for two reasons:
+1)Arima and Sarima models do not take into account external regressors
+2)The inverse transformation expand the variance of the fit.
+
+```{r}
+
+plot(ts_ev_uk, main = "Electric car number of licences (Real data vs Fitted)",ylab='Electric car number of licences')
+lines(exp(fitted(best_arima_el)), col = 2)
+for_el <- forecast(best_arima_el,h=5)
+
+for_el_exp <- for_el
+for_el_exp$mean <- exp(for_el$mean)
+for_el_exp$lower <- exp(for_el$lower)
+for_el_exp$upper <- exp(for_el$upper)
+for_el_exp$x <- ts_ev_uk
+
+plot(for_el_exp, main = "Electric car number of licences (Forecast on original scale)",ylab='Electric car number of licences', xlab='Time')
+
+```
+
+#Same thing with hybrid
+```{r}
+mod_hybrid.auto=auto.arima(ts_hybrid_uk,trace=TRUE,approximation=FALSE)
+summary(mod_hybrid.auto)
+checkresiduals(mod_hybrid.auto)
+#auto arima bad!
+```
+```{r}
+
+y_hybrid <- log(ts_hybrid_uk)
+#here we report the best 4 models we've experimented after some experiments related to acf/pacf values
+mod1 <- Arima(y_hybrid, order = c(1,1,1))
+mod2 <- Arima(y_hybrid, order = c(1,1,2))
+mod3 <- Arima(y_hybrid, order = c(2,1,1))
+mod4 <- Arima(y_hybrid, order = c(1,1,1), seasonal = list(order = c(0,0,1), period = 4))
+
+best_models <- list(mod1, mod2, mod3, mod4)
+
+metrics <- function(model, y) {
+  fitted_vals <- fitted(model)
+  resids <- residuals(model)
+  valid_idx <- which(!is.na(fitted_vals) & !is.na(y))
+  
+  rmse <- sqrt(mean((y[valid_idx] - fitted_vals[valid_idx])^2))
+  mae  <- mean(abs(y[valid_idx] - fitted_vals[valid_idx]))
+  mape <- mean(abs((y[valid_idx] - fitted_vals[valid_idx]) / y[valid_idx])) * 100
+  
+  data.frame(
+    AIC = AIC(model),
+    LogLik = as.numeric(logLik(model)),
+    RMSE = rmse,
+    MAE = mae,
+    MAPE = mape
+  )
+}
+comparison <- do.call(rbind, lapply(best_models, metrics, y = y_hybrid))
+rownames(comparison) <- paste0("Model_", 1:4)
+comparison <- comparison[order(comparison$AIC), ]
+print(comparison)
+```
+Based on AIC values, model 1 is the best candidate. But also model 2 is interesting, since it reports a smaller RMSE. 
+
+```{r}
+print("_____________________________________________________________________________________")
+print(checkresiduals(mod1))
+print("_____________________________________________________________________________________")
+print(checkresiduals(mod2))
+print("_____________________________________________________________________________________")
+print(checkresiduals(mod3))
+print("_____________________________________________________________________________________")
+print(checkresiduals(mod4))
+
+
+```
+
+```{r}
+best_arima_hybrid <- Arima(y_hybrid, order = c(1,1,1))
+resid_hybrid <- residuals(best_arima_hybrid)
+tsdisplay(resid_hybrid, main='Hybrid car number of licences')
+
+plot(y_hybrid, main = "Hybrid car log(number of licences) (Real data vs Fitted)",ylab='log(Hybrid car number of licences)')
+lines(fitted(best_arima_hybrid), col = 2)
+
+for_hybrid <- forecast(best_arima_hybrid)
+plot(for_hybrid, main = "Hybrid car log(number of licences) (Forecast)",ylab='log(Hybrid car number of licences)', xlab = 'Time')
+```
+ALSO IN THE ORIGINAL SCALE
+```{r}
+plot(ts_hybrid_uk, main = "Hybrid car number of licences", ylab='number of licences')
+lines(exp(fitted(mod1)), col = 2)
+```
+
+
+```{r}
+# Forecast log hybrid
+for_hybrid <- forecast(best_arima_hybrid,h=5)
+
+# On the original scale
+for_hybrid_exp <- for_hybrid
+for_hybrid_exp$mean <- exp(for_hybrid$mean)
+for_hybrid_exp$lower <- exp(for_hybrid$lower)
+for_hybrid_exp$upper <- exp(for_hybrid$upper)
+for_hybrid_exp$x <- ts_hybrid_uk 
+
+plot(for_hybrid_exp, main = "Hybrid car number of licences (Forecast)", ylab = 'number of licences', xlab='Time')
+
+```
+```{r}
+summary(best_arima_hybrid)
+```
+
+#TRYING WITH BOX-COX TRANSFORMATIONS ON ELECTRIC CARS
+#but since we used log in exponential smoothing methods, this is only a plus, we won't compare what we achieved on log vs what we achieved with box-cox transformation
+```{r}
+lambda <- BoxCox.lambda(ts_ev_uk)
+bc_electric <- auto.arima(ts_ev_uk, lambda = lambda,approximation = FALSE)
+summary(bc_electric)
+checkresiduals(bc_electric)
+```
+Trying manually
+
+```{r}
+
+lambda <- BoxCox.lambda(ts_ev_uk)
+y_bc <- BoxCox(ts_ev_uk, lambda = lambda)
+
+#Here we report the best three we've found
+mod1 <- Arima(y_bc, order = c(1,1,1), seasonal = list(order = c(1,0,0), period = 4))
+mod2 <- Arima(y_bc, order = c(1,1,1), seasonal = list(order = c(0,0,1), period = 4))
+mod3 <- Arima(y_bc, order = c(2,1,0), seasonal = list(order = c(1,0,0), period = 4))
+
+best_models <- list(mod1, mod2, mod3)
+
+metrics <- function(model, y) {
+  fitted_vals <- fitted(model)
+  resids <- residuals(model)
+  valid_idx <- which(!is.na(fitted_vals) & !is.na(y))
+
+  rmse <- sqrt(mean((y[valid_idx] - fitted_vals[valid_idx])^2))
+  mae  <- mean(abs(y[valid_idx] - fitted_vals[valid_idx]))
+  mape <- mean(abs((y[valid_idx] - fitted_vals[valid_idx]) / y[valid_idx])) * 100
+
+  data.frame(
+    AIC = AIC(model),
+    LogLik = as.numeric(logLik(model)),
+    RMSE = rmse,
+    MAE = mae,
+    MAPE = mape
+  )
+}
+
+comparison <- do.call(rbind, lapply(best_models, metrics, y = y_bc))
+rownames(comparison) <- paste0("Model_", 1:3)
+comparison <- comparison[order(comparison$AIC), ]
+print(comparison)
+
+
+```
+
+```{r}
+checkresiduals(mod1)
+print("_____________________________________________________________________________________")
+checkresiduals(mod2)
+print("_____________________________________________________________________________________")
+checkresiduals(mod3)
+
+
+
+```
+
+```{r}
+best_bc <- mod1
+tsdisplay(best_bc$residuals, main='Residual best Box-Cox scale Electric car number of licences')
+# Box-cox Scale
+plot(y_bc, main = "Box-Cox scale Electric car number of licences (Real data vs Fitted )", ylab='Electric car number of licences')
+lines(fitted(best_bc), col = 2)
+
+# Forecast Box-Cox
+for_bc <- forecast(best_bc,h=5)
+plot(for_bc, main = "Box-Cox scale Electric car number of licences (Forecast ARIMA (1,1,1))",ylab='Electric car number of licences', xlab='Time')
+
+```
+```{r}
+fitted_bc <- fitted(best_bc)
+fitted_inv <- InvBoxCox(fitted_bc, lambda)
+#real vs fitted on original scale
+plot(ts_ev_uk, main = "Box-Cox scale Electric car number of licences (Original scale)", ylab='number of licences')
+lines(fitted_inv, col = 2)
+```
+
+```{r}
+# original scale forecast
+for_bc_inv <- for_bc
+for_bc_inv$mean <- InvBoxCox(for_bc$mean, lambda)
+for_bc_inv$lower <- InvBoxCox(for_bc$lower, lambda)
+for_bc_inv$upper <- InvBoxCox(for_bc$upper, lambda)
+for_bc_inv$x <- ts_ev_uk
+
+plot(for_bc_inv, main = "Forecast on original scale",ylab='number of licences')
+```
+
+
+
+
+BoxCox hybrid:
+
+```{r}
+lambda <- BoxCox.lambda(ts_hybrid_uk)
+bc_hybrid <- auto.arima(ts_hybrid_uk, trace=TRUE,lambda = lambda,approximation = FALSE)
+summary(bc_hybrid)
+checkresiduals(bc_hybrid)
+
+```
+
+BOX COX HYBRID MANUAL
+
+```{r}
+lambda <- BoxCox.lambda(ts_hybrid_uk)
+y_bc <- BoxCox(ts_hybrid_uk, lambda = lambda)
+#here we report best three we've found
+mod1 <- Arima(y_bc, order = c(1,1,1))
+mod2 <- Arima(y_bc, order = c(1,1,2))
+mod3 <- Arima(y_bc, order = c(2,1,1))
+
+best_models <- list(mod1, mod2, mod3)
+
+metrics <- function(model, y) {
+  fitted_vals <- fitted(model)
+  resids <- residuals(model)
+  valid_idx <- which(!is.na(fitted_vals) & !is.na(y))
+
+  rmse <- sqrt(mean((y[valid_idx] - fitted_vals[valid_idx])^2))
+  mae  <- mean(abs(y[valid_idx] - fitted_vals[valid_idx]))
+  mape <- mean(abs((y[valid_idx] - fitted_vals[valid_idx]) / y[valid_idx])) * 100
+
+  data.frame(
+    AIC = AIC(model),
+    LogLik = as.numeric(logLik(model)),
+    RMSE = rmse,
+    MAE = mae,
+    MAPE = mape
+  )
+}
+comparison <- do.call(rbind, lapply(best_models, metrics, y = y_bc))
+rownames(comparison) <- paste0("Model_", 1:3)
+comparison <- comparison[order(comparison$AIC), ]
+
+print(comparison)
+```
+
+
+
+```{r}
+checkresiduals(mod1)
+print("_____________________________________________________________________________________")
+checkresiduals(mod2)
+print("_____________________________________________________________________________________")
+checkresiduals(mod3)
+```
+```{r}
+best_bc <- Arima(y_bc, order = c(1,1,1))
+tsdisplay(best_bc$residuals, main='Residual best Box-Cox scale Hybrid car number of licences')
+plot(y_bc, main = "Box-Cox scale Hybrid car number of licences (Real data vs Fitted)", ylab='Hybrid car number of licences)')
+lines(fitted(best_bc), col = 2)
+
+for_bc <- forecast(best_bc,h=5)
+plot(for_bc, main = 'Box-Cox scale Hybrid car number of licences (Forecast) ',ylab='Hybrid car number of licences', xlab='Time')
+
+```
+
+```{r}
+fitted_inv <- InvBoxCox(fitted(best_bc), lambda)
+plot(ts_hybrid_uk, main = "Box-Cox scale Hybrid car number of licences (Original scale)", ylab='number of licences' )
+lines(fitted_inv, col = 2)
+
+for_bc_inv <- for_bc
+for_bc_inv$mean <- InvBoxCox(for_bc$mean, lambda)
+for_bc_inv$lower <- InvBoxCox(for_bc$lower, lambda)
+for_bc_inv$upper <- InvBoxCox(for_bc$upper, lambda)
+for_bc_inv$x <- ts_hybrid_uk
+
+plot(for_bc_inv, main = "Forecast Box-Cox scale Hybrid car number of licences (Original scale)", ylab='number of licences', xlab='time')
+```
+
+###EXPONENTIAL SMOOTHING METHODS 
+
+SES electric data(not good in our case, let's prove!!)
+```{r}
+ts_ev_uk_log <- log(ts_ev_uk)
+lambda_ev <- BoxCox.lambda(ts_ev_uk)
+ts_ev_uk_bc <- BoxCox(ts_ev_uk, lambda_ev)
+#electric cars
+# Log
+ts_ev_log <- log(ts_ev_uk)
+#for Box-Cox transformation
+lambda_ev <- BoxCox.lambda(ts_ev_uk)
+ts_ev_boxcox <- BoxCox(ts_ev_uk, lambda_ev)
+
+#Exp smoothing
+fit_ses <- ses(ts_ev_uk, h = 5)
+
+forecast_ses <- forecast(fit_ses, h = 5)
+
+plot(forecast_ses,
+     main = "Forecast electric cars number of licences",
+     ylab = "Number of licences Original",
+     xlab = "Time",
+     col = "black",
+     fcol = "salmon",
+     flty = 2,
+     shaded = TRUE)
+
+lines(fitted(fit_ses), col = "blue", type = "o", pch = 20, lwd = 1.5)
+
+legend("topleft", legend = c("Observed", "Fitted", "Forecast"),
+       col = c("black", "blue", "salmon"), lty = 1, pch = 20, cex = 0.8)
+```
+
+```{r}
+checkresiduals(fit_ses)
+```
+AUTOCORRELATED RESIDUALS!!(As expected)
+```{r}
+
+
+fit_holt_electric <- holt(ts_ev_uk, h = 5)
+plot(fit_holt_electric,
+     ylab = "number of licences",
+     xlab = "Time",
+     main = "Holt on original electric cars number of licences",
+     col = "black",
+     fcol = "salmon",
+     type = "o",
+     pch = 20)
+lines(fitted(fit_holt_electric), col = "blue", type = "o", pch = 20, lwd = 1.5)
+
+```
+```{r}
+checkresiduals(fit_holt_electric)
+```
+WN residuals, but let's model the Ts with the logarithmic transformation.
+```{r}
+forecast::accuracy(fit_holt_electric) 
+
+```
+
+#HOLT ON LOG 
+```{r}
+fit_holt_log <- holt(ts_ev_uk_log, h = 5)
+forecast_holt_log <- forecast(fit_holt_log, h = 5)
+
+plot(forecast_holt_log,
+     main = "Holt on electric cars log(number of licences) ",
+     ylab = "log(EV) - Forecast",
+     xlab = "Time",
+     flty = 2,
+     shaded = TRUE,
+     fcol = "salmon",
+     type = "o",
+     col = "black",
+  pch=20)
+
+lines(fitted(fit_holt_log), col = "blue", type = "o", pch = 20, lwd = 1.5)
+
+
+```
+
+
+```{r}
+checkresiduals(fit_holt_log)
+```
+
+```{r}
+forecast::accuracy(fit_holt_log)
+```
+
+
+Now let's also see the same model but on original scale
+
+```{r}
+forecast_holt_log <- forecast(fit_holt_log, h = 5)
+
+forecast_holt_log$mean <- exp(forecast_holt_log$mean)
+forecast_holt_log$lower <- exp(forecast_holt_log$lower)
+forecast_holt_log$upper <- exp(forecast_holt_log$upper)
+forecast_holt_log$x <- ts_ev_uk
+
+plot(forecast_holt_log,
+     main = "Holt Back-Transformed",
+     ylab = "Eletric car number of licencse Count",
+     xlab = "Time",
+     fcol = "salmon",
+     flty = 2,
+     shaded = TRUE,
+     col = "black",
+     type = "o")
+
+lines(exp(fitted(fit_holt_log)),
+      col = "blue",
+      type = "o",
+      pch = 20,
+      lwd = 1.5)
+
+legend("topleft",
+       legend = c("Observed", "Fitted", "Forecast"),
+       col = c("black", "blue", "salmon"),
+       lty = 1,
+       pch = 20,
+       cex = 0.8)
+```
+
+Metrics for original scale(Holt on electric)
+```{r}
+fitted_vals_log <- fitted(fit_holt_log)
+fitted_vals_orig <- exp(fitted_vals_log)
+
+valid_idx <- which(!is.na(fitted_vals_orig))
+forecast::accuracy(exp(fitted_vals_log[valid_idx]), ts_ev_uk[valid_idx])
+
+```
+(We interpret them in miles: e.g. Mean absolute error is of ~7000 cars, Mean absolute percentage error of 4.2%)
+
+```{r}
+fit_holt_damped <- holt(ts_ev_uk, h = 5, damped = TRUE)
+forecast_holt_damped <- forecast(fit_holt_damped, h = 5)
+
+plot(forecast_holt_damped,
+     main = "Holt (damped) on original",
+     ylab = "electric number of license Holt Damped",
+     xlab = "Time",
+     fcol = "salmon",
+     flty = 2,
+     shaded = TRUE,
+     col = "black",
+     type = "o")
+
+lines(fitted(fit_holt_damped),
+      col = "blue",
+      type = "o",
+      pch = 20,
+      lwd = 1.5)
+
+legend("topleft",
+       legend = c("Observed", "Fitted", "Forecast"),
+       col = c("black", "blue", "salmon"),
+       lty = 1,
+       pch = 20,
+       cex = 0.8)
+
+```
+```{r}
+checkresiduals(fit_holt_damped)
+```
+
+```{r}
+forecast::accuracy(fitted(fit_holt_damped), ts_ev_uk)
+
+```
+
+
+```{r}
+fit_holt_damped_log <- holt(log(ts_ev_uk), h = 5, damped = TRUE)
+forecast_holt_damped_log <- forecast(fit_holt_damped_log, h = 5)
+
+plot(forecast_holt_damped_log,
+     main = "Holt (damped) on log-original",
+     ylab = "electric number of license",
+     xlab = "Time",
+     fcol = "salmon",
+     flty = 2,
+     shaded = TRUE,
+     col = "black",
+     type = "o",
+  pch=20)
+
+lines(fitted(forecast_holt_damped_log),
+      col = "blue",
+      type = "o",
+      pch = 20,
+      lwd = 1.5)
+
+legend("topleft",
+       legend = c("Observed", "Fitted", "Forecast"),
+       col = c("black", "blue", "salmon"),
+       lty = 1,
+       pch = 20,
+       cex = 0.8)
+
+```
+```{r}
+checkresiduals(fit_holt_damped_log)
+forecast::accuracy(exp(fitted(fit_holt_damped_log)), ts_ev_uk)
+```
+Now we plot back with the inverse
+```{r}
+fit_holt_damped_log <- holt(log(ts_ev_uk), h = 5, damped = TRUE)
+forecast_holt_damped_log <- forecast(fit_holt_damped_log, h = 5)
+
+forecast_holt_damped_log$mean <- exp(forecast_holt_damped_log$mean)
+forecast_holt_damped_log$lower <- exp(forecast_holt_damped_log$lower)
+forecast_holt_damped_log$upper <- exp(forecast_holt_damped_log$upper)
+forecast_holt_damped_log$x <- ts_ev_uk
+
+plot(forecast_holt_damped_log,
+     main = "Holt (Damped) Back-Transformed",
+     ylab = "electric number of license",
+     xlab = "Time",
+     fcol = "salmon",
+     flty = 2,
+     shaded = TRUE,
+     col = "black",
+     type = "o",
+  pch=20)
+
+lines(exp(fitted(fit_holt_damped_log)),
+      col = "blue",
+      type = "o",
+      pch = 20,
+      lwd = 1.5)
+
+legend("topleft",
+       legend = c("Observed", "Fitted", "Forecast"),
+       col = c("black", "blue", "salmon"),
+       lty = 1,
+       pch = 20,
+       cex = 0.8)
+
+```
+```{r}
+tsdisplay(fit_holt_damped_log$residuals)
+```
+```{r}
+summary(fit_holt_damped_log$model)
+```
+
+
+HOLT-WINTERS ELECTRIC TS
+```{r}
+fit_hw_el <- hw(ts_ev_uk, seasonal = "additive", h = 5)
+
+checkresiduals(fit_hw_el)
+tsdisplay(fit_hw_el$residuals)
+summary(fit_hw_el)
+```
+
+```{r}
+forecast::accuracy(fitted(fit_hw_el), ts_ev_uk)
+
+```
+
+```{r}
+fit_hw_log_el <- hw(ts_ev_uk_log, seasonal = "additive", h = 5)
+forecast_hw_log <- forecast(fit_hw_log_el, h = 5)
+
+plot(forecast_hw_log,
+     main = "HW on log(EV)",
+     ylab = "log(Electric car number car of licence)",
+     xlab = "Time",
+     fcol = "salmon",
+     flty = 2,
+     shaded = TRUE,
+     col = "black",
+     type = "o",
+  pch=20)
+
+lines(fitted(fit_hw_log_el), col = "blue", type = "o", pch = 20, lwd = 1.5)
+
+legend("topleft",
+       legend = c("Observed", "Fitted", "Forecast"),
+       col = c("black", "blue", "salmon"),
+       lty = 1,
+       pch = 20,
+       cex = 0.8)
+
+```
+
+```{r}
+checkresiduals(fit_hw_log_el)
+tsdisplay(fit_hw_log_el$residuals)
+summary(fit_hw_log_el)
+```
+
+
+
+```{r}
+forecast::accuracy(exp(fitted(fit_hw_log_el)), ts_ev_uk)
+
+```
+Look! MAPE and MPE are better than original Hw. Also U stat. RMSE and ME are bigger because when we transform back the variance expands.
+Now we plot back in original scale
+```{r}
+fit_hw_log_el <- hw(ts_ev_uk_log, seasonal = "additive", h = 5)
+forecast_hw_log <- forecast(fit_hw_log_el, h = 5)
+
+forecast_hw_log$mean <- exp(forecast_hw_log$mean)
+forecast_hw_log$lower <- exp(forecast_hw_log$lower)
+forecast_hw_log$upper <- exp(forecast_hw_log$upper)
+forecast_hw_log$x <- ts_ev_uk
+
+plot(forecast_hw_log,
+     main = "HW Back-Transformed",
+     ylab = "Electric car number car of licence",
+     xlab = "Time",
+     fcol = "salmon",
+     flty = 2,
+     shaded = TRUE,
+     col = "black",
+     type = "o",
+  pch=20)
+
+lines(exp(fitted(fit_hw_log_el)),
+      col = "blue",
+      type = "o",
+      pch = 20,
+      lwd = 1.5)
+
+legend("topleft",
+       legend = c("Observed", "Fitted", "Forecast"),
+       col = c("black", "blue", "salmon"),
+       lty = 1,
+       pch = 20,
+       cex = 0.8)
+```
+
+
+
+#EXP SMOOTHING, HOLT , HW ON HYBRID AND LOG-HYBRID
+```{r}
+
+
+fit_ses_hyb <- ses(ts_hybrid_uk, h = 5)
+
+
+forecast_ses <- forecast(fit_ses_hyb, h = 5)
+
+plot(forecast_ses, 
+     main = "SES Original TS with Forecast and CI", 
+     ylab = "Hybrid car number car of licence Original", 
+     xlab = "Time", 
+     col = "black", 
+     flty = 2, 
+     fcol = "lavender", 
+     shaded = TRUE,
+  pch=20)
+
+lines(fitted(fit_ses_hyb), col = "blue", type = "o",pch=20)
+
+legend("topleft", legend = c("Observed", "Fitted", "Forecast"),
+       col = c("black", "blue", "lavender"), lty = 1, pch = 1, cex = 0.8)
+
+
+
+```
+```{r}
+checkresiduals(fit_ses_hyb)
+```
+ALSO HERE; AUTOCORRELATED RESIDUALS
+```{r}
+fit_holt_hyb <- holt(ts_hybrid_uk, h = 5)
+forecast_holt <- forecast(fit_holt_hyb, h = 5)
+
+plot(forecast_holt,
+     main = "Holt on Hybrid car number car of licence Original Series",
+     ylab = "Hybrid car number car of licence Original",
+     xlab = "Time",
+     col = "black",
+     fcol = "lavender",  
+     flty = 2,       
+     shaded = TRUE)    
+
+lines(fitted(fit_holt_hyb), col = "blue", type = "o", pch = 20, lwd = 1.5)
+
+legend("topleft",
+       legend = c("Observed", "Fitted", "Forecast"),
+       col = c("black", "blue", "lavender"),
+       lty = 1,
+       pch = 20,
+       cex = 0.8)
+```
+```{r}
+checkresiduals(fit_holt_hyb)
+```
+
+```{r}
+forecast::accuracy(fitted(fit_holt_hyb), ts_hybrid_uk)
+
+```
+
+```{r}
+ts_hybrid_uk_log <- log(ts_hybrid_uk)
+
+fit_holt_log_hyb <- holt(ts_hybrid_uk_log, h = 5)
+forecast_holt_log <- forecast(fit_holt_log_hyb, h = 5)
+
+plot(forecast_holt_log,
+     main = "Holt on log(Hybrid car number car of licence)",
+     ylab = "log(Hybrid car number car of licence) ",
+     xlab = "Time",
+     col = "black",
+     fcol = "lavender",    
+     flty = 2,           
+     shaded = TRUE)      
+
+lines(fitted(fit_holt_log_hyb), col = "blue", type = "o", pch = 20, lwd = 1.5)
+
+legend("topleft",
+       legend = c("Observed", "Fitted", "Forecast"),
+       col = c("black", "blue", "lavender"),
+       lty = 1,
+       pch = 20,
+       cex = 0.8)
+```
+
+```{r}
+checkresiduals(fit_holt_log_hyb)
+
+```
+
+```{r}
+forecast::accuracy(exp(fitted(fit_holt_log_hyb)), ts_hybrid_uk)
+
+```
+Plotting Back on original scale
+```{r}
+fit_holt_log_hyb <- holt(ts_hybrid_uk_log, h = 5)
+forecast_holt_log <- forecast(fit_holt_log_hyb, h = 5)
+
+forecast_holt_log$mean <- exp(forecast_holt_log$mean)
+forecast_holt_log$lower <- exp(forecast_holt_log$lower)
+forecast_holt_log$upper <- exp(forecast_holt_log$upper)
+forecast_holt_log$x <- ts_hybrid_uk
+
+plot(forecast_holt_log,
+     main = "Holt Back-Transformed (Hybrid car number car of licence)",
+     ylab = "Hybrid car number car of licence",
+     xlab = "Time",
+     col = "black",
+     fcol = "lavender",
+     flty = 2,
+     shaded = TRUE)
+
+lines(exp(fitted(fit_holt_log_hyb)),
+      col = "blue",
+      type = "o",
+      pch = 20,
+      lwd = 1.5)
+
+legend("topleft",
+       legend = c("Observed", "Fitted", "Forecast"),
+       col = c("black", "blue", "lavender"),
+       lty = 1,
+       pch = 20,
+       cex = 0.8)
+```
+
+
+```{r}
+fit_holt_damped_hyb <- holt(ts_hybrid_uk, h = 5, damped = TRUE)
+forecast_holt_damped <- forecast(fit_holt_damped_hyb, h = 5)
+
+plot(forecast_holt_damped,
+     main = "Holt (damped) on Hybrid car number car of licence original",
+     ylab = "Hybrid car number car of licence ",
+     xlab = "Time",
+     col = "black",
+     fcol = "lavender",  
+     flty = 2,        
+     shaded = TRUE)    
+
+lines(fitted(fit_holt_damped_hyb), col = "blue", type = "o", pch = 20, lwd = 1.5)
+
+legend("topleft",
+       legend = c("Observed", "Fitted", "Forecast"),
+       col = c("black", "blue", "lavender"),
+       lty = 1,
+       pch = 20,
+       cex = 0.8)
+
+```
+
+```{r}
+checkresiduals(fit_holt_damped_hyb)
+
+```
+
+```{r}
+forecast::accuracy(fitted(fit_holt_damped_hyb), ts_hybrid_uk)
+
+```
+
+Plotting back on original scale
+```{r}
+fit_holt_damped_hyb_log <- holt(log(ts_hybrid_uk), h = 5, damped = TRUE)
+forecast_holt_damped <- forecast(fit_holt_damped_hyb_log, h = 5)
+
+forecast_holt_damped$mean <- exp(fit_holt_damped_hyb_log$mean)
+forecast_holt_damped$lower <- exp(fit_holt_damped_hyb_log$lower)
+forecast_holt_damped$upper <- exp(fit_holt_damped_hyb_log$upper)
+forecast_holt_damped$x <- ts_hybrid_uk
+
+plot(forecast_holt_damped,
+     main = "Holt (Damped) Back-Transformed (Hybrid car number car of licences)",
+     ylab = "Hybrid car number car of licence ",
+     xlab = "Time",
+     col = "black",
+     fcol = "lavender",
+     flty = 2,
+     shaded = TRUE)
+
+lines(exp(fitted(fit_holt_damped_hyb_log)),
+      col = "blue",
+      type = "o",
+      pch = 20,
+      lwd = 1.5)
+
+legend("topleft",
+       legend = c("Observed", "Fitted", "Forecast"),
+       col = c("black", "blue", "lavender"),
+       lty = 1,
+       pch = 20,
+       cex = 0.8)
+```
+```{r}
+forecast::accuracy(exp(fitted(fit_holt_damped_hyb_log)), ts_hybrid_uk)
+checkresiduals(fit_holt_damped_hyb_log)
+summary(fit_holt_damped_hyb_log)
+tsdisplay(fit_holt_damped_hyb_log$residuals)
+```
+
+
+```{r}
+fit_hw_hyb <- hw(ts_hybrid_uk, seasonal = "additive", h = 5)
+forecast_hw <- forecast(fit_hw_hyb, h = 5)
+
+plot(forecast_hw,
+     main = "HW on Hybrid car number car of licence original",
+     ylab = "Hybrid car number car of licence",
+     xlab = "Time",
+     col = "black",
+     fcol = "lavender",  
+     flty = 2,        
+     shaded = TRUE)   
+
+lines(fitted(fit_hw_hyb), col = "blue", type = "o", pch = 20, lwd = 1.5)
+
+legend("topleft",
+       legend = c("Observed", "Fitted", "Forecast"),
+       col = c("black", "blue", "lavender"),
+       lty = 1,
+       pch = 20,
+       cex = 0.8)
+
+```
+
+
+```{r}
+checkresiduals(fit_hw_hyb)
+
+```
+
+
+```{r}
+forecast::accuracy(fitted(fit_hw_hyb), ts_hybrid_uk)
+
+```
+
+
+```{r}
+
+fit_hw_log_hyb <- hw(ts_hybrid_uk_log, seasonal = "additive", h = 5)
+forecast_hw_log <- forecast(fit_hw_log_hyb, h = 5)
+
+plot(forecast_hw_log,
+     main = "HW on log(Hybrid car number car of licence)",
+     ylab = "log(Hybrid car number car of licence)",
+     xlab = "Time",
+     col = "black",
+     fcol = "lavender",
+     flty = 2,
+     shaded = TRUE)
+
+lines(fitted(fit_hw_log_hyb), col = "blue", type = "o", pch = 20, lwd = 1.5)
+
+legend("topleft",
+       legend = c("Observed", "Fitted", "Forecast"),
+       col = c("black", "blue", "lavender"),
+       lty = 1,
+       pch = 20,
+       cex = 0.8)
+```
+
+
+```{r}
+checkresiduals(fit_hw_log_hyb)
+tsdisplay(fit_hw_log_hyb$residuals)
+```
+
+
+```{r}
+
+forecast::accuracy(exp(fitted(fit_hw_log_hyb)), ts_hybrid_uk)
+
+```
+Plotting back to original scale
+```{r}
+fit_hw_log_hyb <- hw(log(ts_hybrid_uk), seasonal = "additive", h = 5)
+forecast_hw_log <- forecast(fit_hw_log_hyb, h = 5)
+
+forecast_hw_log$mean <- exp(forecast_hw_log$mean)
+forecast_hw_log$lower <- exp(forecast_hw_log$lower)
+forecast_hw_log$upper <- exp(forecast_hw_log$upper)
+forecast_hw_log$x <- ts_hybrid_uk
+
+plot(forecast_hw_log,
+     main = "HW Back-Transformed (Hybrid car number car of licence)",
+     ylab = "Hybrid car number car of licence ",
+     xlab = "Time",
+     col = "black",
+     fcol = "lavender",
+     flty = 2,
+     shaded = TRUE)
+
+lines(exp(fitted(fit_hw_log_hyb)),
+      col = "blue",
+      type = "o",
+      pch = 20,
+      lwd = 1.5)
+
+legend("topleft",
+       legend = c("Observed", "Fitted", "Forecast"),
+       col = c("black", "blue", "lavender"),
+       lty = 1,
+       pch = 20,
+       cex = 0.8)
+```
+
+
+#### Now we load the external variables
+```{r}
+quarters <- c(
+  "2016 Q1", "2016 Q2", "2016 Q3", "2016 Q4",
+  "2017 Q1", "2017 Q2", "2017 Q3", "2017 Q4",
+  "2018 Q1", "2018 Q2", "2018 Q3", "2018 Q4",
+  "2019 Q1", "2019 Q2", "2019 Q3", "2019 Q4",
+  "2020 Q1", "2020 Q2", "2020 Q3", "2020 Q4",
+  "2021 Q1", "2021 Q2", "2021 Q3", "2021 Q4",
+  "2022 Q1", "2022 Q2", "2022 Q3", "2022 Q4",
+  "2023 Q1", "2023 Q2", "2023 Q3", "2023 Q4",
+  "2024 Q1", "2024 Q2"
+)
+
+#price of electricity over the time
+elec_prices <- c(
+  35.18667, 35.49667, 42.01333, 57.81333,
+  48.28333, 41.00667, 44.52000, 51.43667,
+  53.77000, 52.99667, 62.41333, 63.75667,
+  52.59333, 41.54000, 39.60000, 41.24000,
+  33.73000, 25.52000, 38.15333, 50.35000,
+  68.19333, 75.57667, 144.58333, 221.51333,
+  212.34667, 156.86333, 299.94667, 178.23333,
+  126.38000, 92.16000, 85.75667, 84.91000,
+  66.20667, 69.71333
+)
+
+#consumption of electricity over the time
+elec_consumption <- c(
+  28.05000, 27.40000, 28.43333, 27.46000, 26.71333, 25.94000,
+  25.61667, 24.59333, 25.07333, 24.03667, 23.67667, 23.80667,
+  23.68667, 20.99000, 22.95667, 21.97667, 21.89667, 23.56333,
+  23.55000, 23.60667, 23.04667, 21.94333, 22.24333, 21.23000,
+  20.98333, 27.51000, 27.52333, 26.60333, 27.09333, 25.89000,
+  25.74667, 23.66667, 23.96667, 24.34
+)
+
+#Change in CPI for New Cars
+cpi_new_cars <- c(
+  -0.03333333, 0.03333333, 0.10000000, 0.20000000,
+  0.56666667, -0.10000000, 0.33333333, 0.46666667,
+  0.46666667, 0.53333333, 0.06666667, 0.46666667,
+  0.23333333, 0.23333333, 0.20000000, 0.33333333,
+  0.00000000, 0.40000000, 0.40000000, 0.43333333,
+  0.13333333, 0.10000000, 0.36666667, 0.53333333,
+  0.26666667, 1.10000000, 0.30000000, 0.50000000,
+  0.16666667, 0.43333333, 0.20000000, 0.23333333,
+  0.13333333, 0.16666667
+)
+
+# Variation in Brent Crude Oil Prices
+brent_oil <- c(
+  26.44, 35.7, 35.93, 45,
+  41.03, 35.98, 43.61, 49.28,
+  48.26, 57.11, 59.92, 42.82,
+  51.27, 51.93, 48.00, 51.21,
+  15.46, 34.23, 31.01, 37.27,
+  45.84, 55.32, 58.37, 58.32,
+  83.52, 94.72, 80.01, 69.62,
+  63.92, 58.32, 77.91, 61.37,
+  68.58, 67.81
+)
+
+# number of charges
+charges= c(
+  3.672, 3.916, 4.413, 4.725, 
+  5.111, 5.490, 5.916, 6.454,  
+  7.211, 7.906, 8.567, 9.565, 
+  10.309, 11.664, 13.646, 15.116, 
+  16.505, 17.947, 18.265, 19.487, 
+  20.775, 22.790, 24.374, 25.927, 
+  28.375, 30.290, 32.011, 34.637, 
+  37.055, 40.150, 44.020, 49.220, 
+  53.677, 59.670           
+)
+
+# Plug-in Vehicle Sales
+plug_in_vehicles <- c(
+  35772, 42256, 49352, 55221,
+  63166, 70093, 79089, 87254,
+  96368, 106156, 116994, 126688,
+  134581, 139956, 146564, 156677,
+  168366, 173905, 194550, 215771,
+  239845, 271353, 298563, 323853,
+  351044, 373316, 393522, 416587,
+  444570, 473602, 506968, 543000,
+  581623, 616476
+)
+
+# Petrol Prices in the UK (Pence per Litre)
+uk_petrol <- c(
+  1382.9, 1509.6, 1460.6, 1428.9,
+  1283.6, 1438.6, 1398.5, 1371.3,
+  1186.9, 1502.0, 1428.6, 1384.2,
+  1286.7, 1466.8, 1422.8, 1486.1,
+  1345.5, 911.3, 1244.7, 994.1,
+  840.5, 1375.8, 1392.5, 1390.6,
+  1297.0, 1440.8, 1385.1, 1388.2,
+  1255.5, 1465.5, 1481.8, 1456.2,
+  1350.8, 1563.3
+)
+
+#  Percentage Change in UK Energy CPI
+cpi_energy <- c(-5.876494, -4.906771, -1.994018, 3.080082, 8.571428, 5.779154, 4.883011, 4.98008,
+  3.606238, 6.341464, 9.214355, 8.349146, 1.411101, 6.146789, 2.664298, -1.838879,
+  3.061224, -10.71737, -8.910034, -9.009812, -5.40054, 9.196515, 9.591643, 24.21569,
+  24.54805, 53.90071, 52.94627, 55.24862, 46.14209, 7.085253, -4.192635, -16.82766,
+  -13.90486, -16.29909)
+
+# Bank of England Base Rate
+boe_quarterly <- c(
+  0.50, 0.50, 0.25, 0.25, 0.25, 0.25, 0.25, 0.50,  
+  0.50, 0.50, 0.75, 0.75, 0.75, 0.75, 0.75, 0.75,  
+  0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.25,  
+  0.75, 1.25, 2.25, 3.50,                        
+  4.25, 5.00, 5.25, 5.25,                         
+  5.25, 5.00                                       
+)
+
+# UK Unemployment Rate
+unemployment_uk <- c(
+  5.1, 4.9, 4.9, 4.8, 4.7, 4.5, 4.3, 4.2,
+  4.2, 4.0, 4.0, 4.0, 3.9, 3.8, 3.8, 3.8,
+  4.0, 4.1, 4.8, 5.2, 5.0, 4.8, 4.5, 4.2,
+  3.8, 3.8, 3.6, 3.7, 3.9, 4.0, 4.2, 4.0,
+  4.2, 4.3
+)
+
+#Average Interest Rate on Consumer Loans in the UK 
+loans_quarterly <- c(
+  3.21, 3.20, 3.00, 2.98,
+  2.98, 2.98, 2.95, 3.21,
+  3.12, 3.11, 3.40, 3.47,
+  3.35, 3.28, 3.29, 3.30, 
+  3.01, 2.59, 2.40, 2.35,
+  2.29, 2.36, 2.33, 2.33,
+  2.77, 3.15, 3.93, 4.99,
+  6.02, 6.51, 7.04, 7.09,
+  7.11, 7.11)
+
+
+
+
+# ts
+electric_Uk <- ts(
+  c(5.664, 5.836, 6.156, 6.274, 6.574, 6.739, 6.942, 7.045,
+    7.282, 7.794, 6.094, 6.816, 7.447, 8.200, 8.469, 8.979,
+    9.846, 10.972, 11.173, 11.874, 12.477, 13.695, 14.352, 15.293,
+    15.745, 17.234, 18.206, 19.422, 20.988, 23.569, 26.484, 32.334,
+    40.178, 51.888, 59.835, 84.080, 115.896, 139.511, 167.214, 196.287,
+    240.619, 282.317, 313.555, 350.134, 415.145, 463.688, 514.090, 566.842,
+    611.410, 659.014, 702.820),
+  start = c(2011, 4), frequency = 4
+)
+
+hybrid_uk <- ts(
+  c(12, 26, 36, 52, 91, 134, 144, 158, 190, 204, 221, 243, 263, 297, 410, 515,
+    594, 670, 716, 771, 812, 831, 829, 819, 854, 1038, 1219, 1479, 1732, 1911,
+    2457, 3455, 4217, 4837, 5180, 5852, 6411, 6679, 6814, 6681, 6434, 6296,
+    6101, 5777, 5325, 4917),
+  start = c(2013, 1), frequency = 4
+)
+
+```
+
+now we standardize the time windows
+```{r}
+electric_sub <- window(electric_Uk, start = c(2016, 1), end = c(2024, 2))
+hybrid_sub <- window(hybrid_uk, start = c(2016, 1), end = c(2024, 2))
+```
+
+
+
+Building the final dataset
+```{r}
+df_final <- data.frame(
+  Quarter = quarters,
+  elec_prices = elec_prices,
+  elec_consumption = elec_consumption,
+  cpi_new_cars = cpi_new_cars,
+  brent_oil = brent_oil,
+  plug_in_vehicles = plug_in_vehicles,
+  uk_petrol = uk_petrol,
+  charges=charges,
+  loans_quarterly=loans_quarterly,
+  cpi_energy=cpi_energy,
+  boe_quarterly=boe_quarterly,
+  unemployment_uk=unemployment_uk,
+  electric_Uk = as.numeric(electric_sub),
+  hybrid_uk = as.numeric(hybrid_sub)
+)
+df_final$time <- seq_len(nrow(df_final))
+head(df_final$time)
+```
+
+```{r}
+df_num <- df_final[, sapply(df_final, is.numeric)]
+cor(df_num, use = "pairwise.complete.obs")
+cor(df_num, df_num[ , "electric_Uk"])
+```
+
+
+#GAM
+Now we use on other type of model, the gam, we restart from the beginning with eletric cars
+```{r}
+library(zoo)
+
+df_final <- data.frame(
+  Quarter = quarters,
+  elec_prices = elec_prices,
+  elec_consumption = elec_consumption,
+  cpi_new_cars = cpi_new_cars,
+  brent_oil = brent_oil,
+  plug_in_vehicles = plug_in_vehicles,
+  uk_petrol = uk_petrol,
+  charges=charges,
+  loans_quarterly=loans_quarterly,
+  cpi_energy=cpi_energy,
+  boe_quarterly=boe_quarterly,
+  unemployment_uk=unemployment_uk,
+  electric_Uk = as.numeric(electric_sub),
+  hybrid_uk = as.numeric(hybrid_sub)
+)
+df_final$quarter_date <- as.yearqtr(df_final$Quarter, format = "%Y Q%q")
+df_final$quarter_factor <- factor(format(df_final$quarter_date, "%q"))
+df_final$time           <- seq_len(nrow(df_final))
+df_final$log_electric   <- log(df_final$electric_Uk)
+```
+
+
+```{r}
+ggplot(df_final, aes(quarter_date, electric_Uk)) +
+  geom_line(colour = "steelblue", linewidth = 0.7) +
+  labs(title = "TS electric cars (UK)", y = "electric_Uk", x = "Quarter")
+
+ggplot(df_final, aes(electric_Uk)) +
+  geom_histogram(bins = 20, fill = "orange", colour = "white") +
+  labs(title = "Distribution of electric_Uk")
+
+ggplot(df_final, aes(log_electric)) +
+  geom_histogram(bins = 20, fill = "darkgreen", colour = "white") +
+  labs(title = "Distribution log(electric_Uk)")
+
+with(df_final, print(c(
+  min    = min(electric_Uk),
+  q1     = quantile(electric_Uk, .25),
+  median = median(electric_Uk),
+  mean   = mean(electric_Uk),
+  q3     = quantile(electric_Uk, .75),
+  max    = max(electric_Uk),
+  sd     = sd(electric_Uk)
+)))
+
+ggplot(df_final, aes(quarter_factor, log_electric)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Log(EV adoption) by quarter", x = "Quarter (Q1–Q4)", y = "log_electric")
+#after different experiments, one model which respect the assumptions is
+formula_final <- log_electric ~ s(time, k = 10) + quarter_factor + s(plug_in_vehicles, k = 6)
+
+```
+This final boxplot shows the logarithm of EV (electric vehicle) adoption (log_electric) across the four quarters of the year. The distribution appears relatively consistent across all quarters, with similar medians and interquartile ranges. There are no significant outliers, and the data suggests that EV adoption does not vary dramatically by quarter.
+
+The `rolling_mae` function computes the **mean absolute error (MAE)** from a rolling forecast using a **GAM model**. It trains the model on expanding time windows up to a specified cutoff date and evaluates the prediction error on the next data point, averaging these errors over time.
+```{r}
+rolling_mae <- function(fml, data, cutoff, min_train = 12) {
+  idx <- which(data$quarter_date < cutoff)
+  idx <- idx[idx >= min_train]
+  errs <- numeric(length(idx))
+  for (i in seq_along(idx)) {
+    tr <- 1:idx[i]; te <- idx[i] + 1
+    fit <- mgcv::gam(fml, data = data[tr, ], method = "REML")   # namespace
+    pr  <- predict(fit, newdata = data[te, ])
+    errs[i] <- abs(pr - data$log_electric[te])
+  }
+  mean(errs)
+}
+
+cv_mae <- rolling_mae(
+  formula_final,
+  df_final,
+  cutoff = as.yearqtr("2022 Q3", "%Y Q%q")
+)
+print(cv_mae)
+```
+The rolling cross-validated MAE is approximately 0.059, indicating good predictive accuracy of the model over time.
+
+Now we dived in train/test our dataset, and create the gam model
+```{r}
+library(mgcv)
+train_set <- subset(df_final, quarter_date <= as.yearqtr("2023 Q4", "%Y Q%q"))
+test_set  <- subset(df_final, quarter_date  > as.yearqtr("2023 Q4", "%Y Q%q"))
+
+gam_final <- mgcv::gam(
+  formula_final,
+  data   = train_set,
+  method = "REML"
+)
+gam_try=gam(log_electric ~ s(time, k = 10) + s(plug_in_vehicles, k = 6),data = train_set,method = "REML")
+summary(gam_final) #we keep s(plug) since if not keeped the metrics get worse
+summary(gam_try) 
+checkresiduals(gam_final)
+checkresiduals(gam_try)
+```
+```{r}
+tsdisplay(gam_final$residuals)
+tsdisplay(gam_try$residuals)
+```
+We report a model which is based on GAM+arima residuals
+
+```{r}
+library(mgcv)
+gam_fit <- gam(
+  log_electric ~ s(time, k = 10) + quarter_factor + s(plug_in_vehicles, k = 6),
+  data = train_set,
+  method = "REML"
+)
+tsdisplay(gam_fit$residuals)
+
+```
+
+
+```{r}
+X <- predict(gam_fit, type = "lpmatrix")
+b <- coef(gam_fit)
+
+param_cols <- grepl("Intercept|quarter_factor", colnames(X))
+
+fit_param <- X[, param_cols] %*% b[param_cols]
+fit_smooth <- X[, !param_cols] %*% b[!param_cols]
+fitted_gam <- fit_param + fit_smooth
+#arima residuals
+resid_gam <- train_set$log_electric - fitted_gam
+#after different experiments we model the residuals with
+best_fit <- Arima(resid_gam, order = c(2, 0, 2), seasonal = list(order = c(0, 0, 0), period = 4))
+checkresiduals(best_fit)
+X_new <- predict(gam_fit, newdata = test_set[1:5, ], type = "lpmatrix")
+fit_gam_future <- X_new %*% b
+
+f_arima <- forecast(best_fit, h = 5)
+
+forecast_combined <- fit_gam_future + f_arima$mean
+forecast_lower <- fit_gam_future + f_arima$lower[, 2]
+forecast_upper <- fit_gam_future + f_arima$upper[, 2]
+tsdisplay(best_fit$residuals)
+```
+
+
+
+
+
+
+```{r}
+obs <- train_set$log_electric
+
+start_year <- as.numeric(format(min(train_set$quarter_date), "%Y"))
+start_quarter <- as.numeric(format(as.yearqtr(min(train_set$quarter_date)), "%q"))
+
+ts_obs <- ts(obs, start = c(start_year, start_quarter), frequency = 4)
+ts_fitted <- ts(fitted_gam, start = c(start_year, start_quarter), frequency = 4)
+
+last_time <- end(ts_obs)
+if (last_time[2] == 4) {
+  next_year <- last_time[1] + 1
+  next_quarter <- 1
+} else {
+  next_year <- last_time[1]
+  next_quarter <- last_time[2] + 1
+}
+
+ts_forecast <- ts(forecast_combined, start = c(next_year, next_quarter), frequency = 4)
+
+lower_clean <- forecast_lower
+upper_clean <- forecast_upper
+
+for (i in which(!is.finite(lower_clean))) {
+  lower_clean[i] <- lower_clean[i-1]  
+}
+for (i in which(!is.finite(upper_clean))) {
+  upper_clean[i] <- upper_clean[i-1]  
+}
+
+ts_lower_clean <- ts(lower_clean, start = start(ts_forecast), frequency = 4)
+ts_upper_clean <- ts(upper_clean, start = start(ts_forecast), frequency = 4)
+
+xlim_range <- range(
+  time(ts_obs),
+  time(ts_forecast)
+)
+
+ylim_range <- range(c(obs, fitted_gam, forecast_combined, lower_clean, upper_clean), na.rm = TRUE)
+
+plot(
+  ts_obs,
+  ylim = ylim_range,
+  xlim = xlim_range,
+  type = "n",
+  main = "GAM + ARIMA Forecast",
+  ylab = "log(Electric)",
+  xlab = "Time"
+)
+
+# Observed
+lines(ts_obs, col = "black", type = "o", pch = 20)
+
+# Fitted GAM
+lines(ts_fitted, col = "blue", type = "o", pch = 20, lwd = 1.5)
+
+# Forecast
+lines(ts_forecast, col = "salmon", type = "o", pch = 20)
+
+# Confidence intervals cleaned
+lines(ts_lower_clean, col = "salmon", lty = 2)
+lines(ts_upper_clean, col = "salmon", lty = 2)
+
+# Legend
+legend(
+  "topleft",
+  legend = c("Observed", "Fitted GAM", "Forecast", "95% CI"),
+  col = c("black", "blue", "salmon", "salmon"),
+  lty = c(1, 1, 1, 2),
+  pch = c(20, 20, 20, NA),
+  bty = "n"
+)
+
+```
+But since this is the log-scale plot, we need to invert the estimations.
+Plotting back on the original scale
+```{r}
+obs_orig <- exp(obs)
+fitted_orig <- exp(fitted_gam)
+forecast_orig <- exp(forecast_combined)
+forecast_lower_orig <- exp(forecast_lower)
+forecast_upper_orig <- exp(forecast_upper)
+ts_obs_orig <- ts(obs_orig, start = c(start_year, start_quarter), frequency = 4)
+ts_fitted_orig <- ts(fitted_orig, start = c(start_year, start_quarter), frequency = 4)
+ts_forecast_orig <- ts(forecast_orig, start = c(next_year, next_quarter), frequency = 4)
+ts_lower_orig <- ts(forecast_lower_orig, start = c(next_year, next_quarter), frequency = 4)
+ts_upper_orig <- ts(forecast_upper_orig, start = c(next_year, next_quarter), frequency = 4)
+xlim_range_orig <- range(time(ts_obs_orig), time(ts_forecast_orig))
+plot(
+  ts_obs_orig,
+  ylim = range(c(obs_orig, fitted_orig, forecast_orig, forecast_lower_orig, forecast_upper_orig), na.rm = TRUE),
+  xlim = xlim_range_orig,
+  type = "n",
+  main = "GAM + ARIMA Forecast (Original Scale)",
+  ylab = "EV",
+  xlab = "Time"
+)
+
+lines(ts_obs_orig, col = "black", type = "o", pch = 20)
+lines(ts_fitted_orig, col = "blue", type = "o", pch = 20, lwd = 1.5)
+lines(ts_forecast_orig, col = "salmon", type = "o", pch = 20)
+lines(ts_lower_orig, col = "red", lty = 2)
+lines(ts_upper_orig, col = "red", lty = 2)
+
+legend(
+  "topleft",
+  legend = c("Observed", "Fitted GAM", "Forecast", "95% CI"),
+  col = c("black", "blue", "salmon","salmon"),
+  lty = c(1, 1, 1,2),
+  pch = c(20, 20, 20,NA),
+  bty = "n"
+)
+```
+
+
+```{r}
+resid_gam <- residuals(gam_try)
+fit_arima <- Arima(resid_gam, order = c(2, 0, 1), seasonal = list(order = c(0, 0, 0), period = 4))
+checkresiduals(fit_arima)
+tsdisplay(fit_arima$residuals)
+b <- coef(gam_try)
+X_future <- predict(gam_try, newdata = test_set, type = "lpmatrix")
+fit_gam_future <- X_future %*% b
+f_resid <- forecast(fit_arima, h = nrow(test_set))
+forecast_log <- fit_gam_future + f_resid$mean
+lower_log <- fit_gam_future + f_resid$lower[,2]
+upper_log <- fit_gam_future + f_resid$upper[,2]
+forecast_orig <- exp(forecast_log)
+lower_orig <- exp(lower_log)
+upper_orig <- exp(upper_log)
+
+
+
+```
+
+
+```{r}
+obs_orig <- exp(train_set$log_electric)
+fitted_orig <- exp(fitted(gam_try))
+start_year <- as.numeric(format(min(train_set$quarter_date), "%Y"))
+start_quarter <- as.numeric(format(as.yearqtr(min(train_set$quarter_date)), "%q"))
+
+ts_obs <- ts(obs_orig, start = c(start_year, start_quarter), frequency = 4)
+ts_fitted <- ts(fitted_orig, start = start(ts_obs), frequency = 4)
+
+# Forecast
+next_year <- as.numeric(format(min(test_set$quarter_date), "%Y"))
+next_quarter <- as.numeric(format(as.yearqtr(min(test_set$quarter_date)), "%q"))
+
+ts_forecast <- ts(forecast_orig, start = c(next_year, next_quarter), frequency = 4)
+ts_lower <- ts(lower_orig, start = start(ts_forecast), frequency = 4)
+ts_upper <- ts(upper_orig, start = start(ts_forecast), frequency = 4)
+xlim_range <- range(time(ts_obs), time(ts_forecast))
+ylim_range <- range(c(ts_obs, ts_fitted, forecast_orig, lower_orig, upper_orig), na.rm = TRUE)
+plot(ts_obs,
+     type = "n",
+     xlim = xlim_range,
+     ylim = ylim_range,
+     main = "Forecast Electric Vehicles (GAM + ARIMA)",
+     ylab = "EV Count",
+     xlab = "Time")
+
+lines(ts_obs, col = "black", type = "o", pch = 20)
+lines(ts_fitted, col = "blue", type = "o", pch = 20, lwd = 1.5)
+lines(ts_forecast, col = "salmon", type = "o", pch = 20)
+lines(ts_lower, col = "salmon", lty = 2)
+lines(ts_upper, col = "salmon", lty = 2)
+
+legend("topleft",
+       legend = c("Observed", "Fitted GAM", "Forecast", "95% CI"),
+       col = c("black", "blue", "salmon", "salmon"),
+       lty = c(1, 1, 1, 2),
+       pch = c(20, 20, 20, NA),
+       bty = "n")
+
+```
+
+```{r}
+forecast_log <- fit_gam_future + f_resid$mean
+forecast_orig <- exp(forecast_log)
+actual_test_orig <- exp(test_set$log_electric)
+forecast::accuracy(forecast_orig, actual_test_orig)
+
+```
+
+BETTER
+
+Now it's the turn of hybrid cars
+```{r}
+df_final$log_hybrid <- log(df_final$hybrid_uk)
+
+
+train_cut <- as.yearqtr("2023 Q4", "%Y Q%q")
+train_set <- subset(df_final, quarter_date <= train_cut)
+test_set  <- subset(df_final, quarter_date  > train_cut)
+
+
+gam_mean <- mgcv::gam(
+  log_hybrid ~ s(time, k = 10),
+  data   = train_set,
+  method = "REML"
+)
+checkresiduals(gam_mean) #autocorrelated
+res_tr  <- residuals(gam_mean)
+fit_res <- Arima( #we've found this sarimax to model them!
+  res_tr,
+  order    = c(2,0,1),
+  seasonal = list(order = c(1,0,0), period = 4),
+  include.mean = FALSE, method = "ML"
+)
+checkresiduals(fit_res)
+summary(fit_res)
+tsdisplay(fit_res$residuals)
+```
+The Ljung-Box test shows no significant autocorrelation in the residuals (p = 0.58), indicating a well-fitted ARIMA model.
+
+
+```{r}
+pred_gam_future <- predict(gam_mean, newdata = test_set, se.fit = TRUE)
+h <- nrow(test_set)
+
+forecast_resid <- forecast(fit_res, h = h)
+forecast_log <- pred_gam_future$fit + forecast_resid$mean
+#these are in log-scale!
+lower_log <- pred_gam_future$fit - 1.96 * pred_gam_future$se.fit + forecast_resid$lower[, 2]
+upper_log <- pred_gam_future$fit + 1.96 * pred_gam_future$se.fit + forecast_resid$upper[, 2]
+ts_obs <- ts(train_set$log_hybrid,
+             start = c(as.numeric(format(min(train_set$quarter_date), "%Y")),
+                       as.numeric(format(as.yearqtr(min(train_set$quarter_date)), "%q"))),
+             frequency = 4)
+
+ts_fitted <- ts(fitted(gam_mean),
+                start = start(ts_obs),
+                frequency = 4)
+ts_forecast <- ts(forecast_log,
+                  start = c(as.numeric(format(min(test_set$quarter_date), "%Y")),
+                            as.numeric(format(as.yearqtr(min(test_set$quarter_date)), "%q"))),
+                  frequency = 4)
+ts_lower <- ts(lower_log,
+               start = start(ts_forecast),
+               frequency = 4)
+ts_upper <- ts(upper_log,
+               start = start(ts_forecast),
+               frequency = 4)
+xlim_range <- range(time(ts_obs), time(ts_forecast))
+ylim_range <- range(c(train_set$log_hybrid, fitted(gam_mean), forecast_log, lower_log, upper_log), na.rm = TRUE)
+# Plot
+plot(ts_obs,
+     type = "n",
+     xlim = xlim_range,
+     ylim = ylim_range,
+     main = "Hybrid EV Log - Observed, Fitted GAM + ARIMA Forecast",
+     xlab = "Time",
+     ylab = "log(Hybrid EV Count)")
+lines(ts_obs, col = "black", type = "o", pch = 20)
+lines(ts_fitted, col = "blue", type = "o", pch = 20, lwd = 1.5)
+lines(ts_forecast, col = "thistle4", type = "o", pch = 20)
+lines(ts_lower, col = "thistle4", lty = 2)
+lines(ts_upper, col = "thistle4", lty = 2)
+legend("topleft",
+       legend = c("Observed", "Fitted GAM", "Forecast", "95% CI"),
+       col = c("black", "blue", "thistle4", "thistle4"),
+       lty = c(1, 1, 1, 2),
+       pch = c(20, 20, 20, NA),
+       bty = "n")
+```
+
+
+
+```{r}
+obs_orig <- exp(train_set$log_hybrid)
+fitted_orig <- exp(fitted(gam_mean))
+forecast_orig <- exp(forecast_log)
+lower_orig <- exp(lower_log)
+upper_orig <- exp(upper_log)
+# ts(in original scale)
+ts_obs_orig <- ts(obs_orig,
+                  start = c(as.numeric(format(min(train_set$quarter_date), "%Y")),
+                            as.numeric(format(as.yearqtr(min(train_set$quarter_date)), "%q"))),
+                  frequency = 4)
+
+ts_fitted_orig <- ts(fitted_orig,
+                    start = start(ts_obs_orig),
+                    frequency = 4)
+
+ts_forecast_orig <- ts(forecast_orig,
+                      start = c(as.numeric(format(min(test_set$quarter_date), "%Y")),
+                                as.numeric(format(as.yearqtr(min(test_set$quarter_date)), "%q"))),
+                      frequency = 4)
+
+ts_lower_orig <- ts(lower_orig,
+                   start = start(ts_forecast_orig),
+                   frequency = 4)
+
+ts_upper_orig <- ts(upper_orig,
+                   start = start(ts_forecast_orig),
+                   frequency = 4)
+xlim_range <- range(time(ts_obs_orig), time(ts_forecast_orig))
+ylim_range <- range(c(obs_orig, fitted_orig, forecast_orig, lower_orig, upper_orig), na.rm = TRUE)
+plot(ts_obs_orig,
+     type = "n",
+     xlim = xlim_range,
+     ylim = ylim_range,
+     main = "Hybrid EV - Observed, Fitted GAM + ARIMA Forecast",
+     xlab = "Time",
+     ylab = "Hybrid EV Count")
+
+lines(ts_obs_orig, col = "black", type = "o", pch = 20)
+lines(ts_fitted_orig, col = "blue", type = "o", pch = 20, lwd = 1.5)
+lines(ts_forecast_orig, col = "thistle4", type = "o", pch = 20)
+lines(ts_lower_orig, col = "thistle4", lty = 2)
+lines(ts_upper_orig, col = "thistle4", lty = 2)
+
+legend("topleft",
+       legend = c("Observed", "Fitted GAM", "Forecast", "95% CI"),
+       col = c("black", "blue", "thistle4", "thistle4"),
+       lty = c(1, 1, 1, 2),
+       pch = c(20, 20, 20, NA),
+       bty = "n")
+```
+
+
+Now let's focus our analysis on Arimax/Sarimax models
+We'll focus on:
+-identifying relevant predictors(but removing the multicollinearity)
+-perform a stepwise backward regression setting 0.05p-val as threshold
+-Then we'll try to add the Arima/Sarima residuals to the regressions' residuals since we're interested in combining the advantages given by both the regression and the Arima/Sarima models.
+```{r}
+electric_Uk <- window(electric_Uk, start = c(2016, 1))
+hybrid_uk <- window(hybrid_uk, start = c(2016, 1))
+df <- data.frame(
+  quarter = quarters,
+  elec_prices =elec_prices,
+  elec_consumption = elec_consumption,
+  cpi_new_cars = cpi_new_cars,
+  brent_oil = brent_oil,
+  charges = charges,
+  plug_in_vehicles = plug_in_vehicles,
+  uk_petrol = uk_petrol,
+  cpi_energy = cpi_energy,
+  boe_quarterly = boe_quarterly,
+  unemployment_uk = unemployment_uk,
+  loans_quarterly = loans_quarterly,
+  electric_Uk <- electric_Uk,
+  hybrid_uk= hybrid_uk
+)
+
+df$electric <- as.numeric(electric_Uk)
+df$hybrid <- as.numeric(hybrid_uk)
+
+```
+
+```{r}
+#This function removes Vif>5 variables
+remove_high_vif = function(data, target_var, threshold = 5) {
+  formula_str = paste("log(", target_var, ") ~ .")
+  vif_model = lm(as.formula(formula_str), data = data)
+  vif_values = car::vif(vif_model)
+  while (any(vif_values > threshold)) {
+    worst_var <- names(which.max(vif_values)) #identify the worst variable in terms of vif
+    data <- data %>% select(-all_of(worst_var))
+    if (ncol(data) <= 2) break   
+    vif_model <- update(vif_model, as.formula(paste(". ~ . -", worst_var)))
+    vif_values <- car::vif(vif_model)
+  }
+  return(data)
+}
+```
+
+```{r}
+#expansive rolling windw
+expanding_window_arimax <- function(df, target_var, selected_vars, 
+  order = c(1,1,0),  #here we set this since we have tried many experiments on residuals in advance with a grid search on combinations 
+  seasonal = list(order = c(0,0,0), period = 4),
+  window_size = 16) {
+  actuals <- c()
+  forecasts <- c()
+  aic_values <- c()
+  mape_values <- c()
+  last_model <- NULL
+  cat("\nADF test for ", target_var, ":\n")
+  print(adf.test(log(df[[target_var]]))) 
+  for (i in 0:(nrow(df) - window_size - 1)) {
+    train <- df[1:(window_size + i), ] #expanding 
+    test <- df[window_size + i + 1, ] #testing on the next one
+    xreg_train <- as.matrix(train[, selected_vars, drop = FALSE])
+    xreg_test <- as.matrix(test[, selected_vars, drop = FALSE])
+    model <- tryCatch({
+      Arima(log(train[[target_var]]), 
+        order = order,
+        seasonal = seasonal,
+        xreg = xreg_train, 
+        method = "ML")
+    }, error = function(e) {
+      Arima(log(train[[target_var]]), 
+        order = order,
+        seasonal = seasonal,
+        xreg = xreg_train, 
+        method = "CSS")
+    })
+    last_model <- model #saving the last one(after the rolling window phase)
+    pred <- forecast(model, xreg = xreg_test, h = 1)
+    forecast_value <- exp(pred$mean[1])
+    actual_value <- test[[target_var]]
+    forecasts <- c(forecasts, forecast_value)
+    actuals <- c(actuals, actual_value)
+    aic_values <- c(aic_values, AIC(model))
+    mape <- abs((actual_value - forecast_value) / actual_value) * 100 # abs(Yt-FT)/Yt *100
+    mape_values <- c(mape_values, mape)
+  }
+  rmse <- sqrt(mean((actuals - forecasts)^2))
+  mae <- mean(abs(actuals - forecasts))
+  mape_mean <- mean(mape_values)
+  
+  cat("\nPerformance", target_var, ":\n")
+  cat("Mean AIC :", round(mean(aic_values), 2), "\n")
+  cat("Mean RMSE:", round(rmse, 2), "\n")
+  cat("Mean MAE:", round(mae, 2), "\n")
+  cat("Mean MAPE :", round(mape_mean, 2), "%\n")
+  return(list(
+    model = last_model,
+    metrics = list(AIC = mean(aic_values), RMSE = rmse, MAE = mae, MAPE = mape_mean),
+    forecasts = forecasts,
+    actuals = actuals
+  ))
+}
+```
+
+```{r}
+#here we perform a grid search on the combinations
+grid_search_arima <- function(df, target_var, selected_vars, 
+  pdq_grid, window_size = 16) {
+  results <- data.frame()
+  for (idx in 1:nrow(pdq_grid)) {
+    p <- pdq_grid[idx, "p"]
+    d <- pdq_grid[idx, "d"]
+    q <- pdq_grid[idx, "q"]
+    P <- pdq_grid[idx, "P"]
+    D <- pdq_grid[idx, "D"]
+    Q <- pdq_grid[idx, "Q"]
+    seasonal <- list(order = c(P, D, Q), period = 4)
+    tryCatch({
+      model_result <- expanding_window_arimax(
+        df = df,
+        target_var = target_var,
+        selected_vars = selected_vars,
+        order = c(p, d, q),
+        seasonal = seasonal,
+        window_size = window_size
+      )
+      results <- rbind(results, data.frame(
+        p, d, q, P, D, Q,
+        AIC = model_result$metrics$AIC,
+        MAPE = model_result$metrics$MAPE
+      ))
+    }, error = function(e) {
+      cat("Error with params:", p, d, q, P, D, Q, "\n")
+    })
+  }
+  results <- results[order(results$AIC), ]
+  return(results)
+}
+
+```
+
+```{r}
+#here we create a function to set the forecasts in a elegant way(we put them in a dataframe)
+forecast_to_dataframe <- function(forecast_obj) {
+  data.frame(
+    Point.Forecast = as.numeric(forecast_obj$mean),
+    Lo.80 = as.numeric(forecast_obj$lower[,1]), #inferior limit 80%
+    Hi.80 = as.numeric(forecast_obj$upper[,1]), #superior limit 80%
+    Lo.95 = as.numeric(forecast_obj$lower[,2]), #inferior limit 95%
+    Hi.95 = as.numeric(forecast_obj$upper[,2])  #superior limit 95%
+  )
+}
+```
+
+
+```{r}
+#here we make a function to forecast the xis with arima models since we do not have access to future Xis in our matrix,
+#so we condition to last periods and fit a fast arima only to have a projection perspective
+forecast_predictors = function(df, selected_vars, n_future = 5) {
+  future_preds = matrix(nrow = n_future, ncol = length(selected_vars))
+  colnames(future_preds) = selected_vars
+  for (k in seq_along(selected_vars)) {
+    var = selected_vars[k]
+    x = df[[var]]
+    fit <- tryCatch({
+      auto.arima(x)
+    }, error = function(e) {
+      Arima(x, order = c(0, 1, 0))
+    })
+    pred = forecast(fit, h = n_future)
+    future_preds[, k] = pred$mean
+  }
+  return(future_preds)
+}
+
+```
+
+```{r}
+#and here a plotting function based on the above code
+plot_forecast = function(actual, forecast_df, title) {
+  q_dates = as.yearqtr(df$quarter, format = "%Y Q%q")
+  future_q = seq(tail(q_dates, 1) + 0.25, by = 0.25, length.out = nrow(forecast_df))
+  full_dates = c(q_dates, future_q) #what we have+future
+  full_values = c(actual, forecast_df$Point.Forecast) #and same here but for values
+  plot_data = data.frame(
+    Date = full_dates,
+    Value = full_values,
+    Type = c(rep("Actual", length(actual)), rep("Forecast", nrow(forecast_df))),
+    Lo.80 = c(rep(NA, length(actual)), forecast_df$Lo.80),
+    Hi.80 = c(rep(NA, length(actual)), forecast_df$Hi.80),
+    Lo.95 = c(rep(NA, length(actual)), forecast_df$Lo.95),
+    Hi.95 = c(rep(NA, length(actual)), forecast_df$Hi.95)
+  )
+  ggplot(plot_data, aes(x = Date, y = Value)) +
+    geom_ribbon(aes(ymin = Lo.95, ymax = Hi.95), fill = "grey90", alpha = 0.4) +
+    geom_ribbon(aes(ymin = Lo.80, ymax = Hi.80), fill = "grey5", alpha = 0.3) +
+    geom_line(aes(color = Type, linetype = Type), linewidth = 1) +
+    geom_point(aes(color = Type), size = 2) +
+    scale_x_yearqtr(format = "%Y Q%q")}
+  
+```
+
+#(HYBRID)
+```{r}
+
+df_hybrid = df %>% 
+  select(-electric, -quarter) %>%
+  select(hybrid, everything())
+df_reduced_hyb = remove_high_vif(df_hybrid, "hybrid", threshold = 5) #we remove all the variable whose Vif>5
+print(names(df_reduced_hyb)[-1])
+```
+
+```{r}
+# Stepwise regression
+full_model_hyb = lm(log(hybrid) ~ ., data = df_reduced_hyb)
+step_model_hyb = step(full_model_hyb, direction = "backward", trace = 0)
+selected_vars_hyb = all.vars(formula(step_model_hyb))[-1]
+
+cat("\nFinal regression model:\n")
+summary(step_model_hyb)
+
+```
+```{r}
+step_model_hyb=update(step_model_hyb,.~.-cpi_new_cars)
+summary(step_model_hyb)
+```
+```{r}
+checkresiduals(step_model_hyb) #not correlated, but we want to model them with Arima/Sarima. They're borderline
+shapiro.test(step_model_hyb$residuals) #normal
+par(mfrow=c(2,2))
+plot(step_model_hyb,which=c(1,2,3,5),col='blue4',pch=20)
+par(mfrow=c(1,1))
+```
+We observed that the residual variance is not constant, indicating the presence of heteroscedasticity.
+If the primary goal were inference using a multiple linear regression model, we would consider applying transformations to stabilize the variance.
+However, since our objective is forecasting, we proceed by fitting an ARIMAX model to account for temporal dependencies and improve predictive accuracy.
+
+
+```{r}
+#rolling window
+hybrid_result = expanding_window_arimax(
+  df = df,
+  target_var = "hybrid",
+  selected_vars = selected_vars_hyb,
+  order = c(1,1,0) #selected with the grid search
+)
+
+checkresiduals(hybrid_result$model)
+tsdisplay(hybrid_result$model$residuals)
+```
+Since ADF =0.79 we used d=1
+Now residuals looks better than before
+
+```{r}
+#ELECTRIC
+df_electric <- df %>% 
+  select(-hybrid, -quarter) %>%
+  select(electric, everything())
+df_reduced_el <- remove_high_vif(df_electric, "electric", threshold = 5)
+cat("\nSelected variables:\n")
+print(names(df_reduced_el)[-1])
+
+# Stepwise regression
+full_model_el <- lm(log(electric) ~ ., data = df_reduced_el)
+step_model_el <- step(full_model_el, direction = "backward", trace = 0)
+selected_vars_el <- all.vars(formula(step_model_el))[-1]
+print(summary(step_model_el))
+```
+```{r}
+checkresiduals(step_model_el)
+shapiro.test(step_model_el$residuals)
+par(mfrow=c(2,2))
+plot(step_model_el,which=c(1,2,3,5),pch=20,col='blue4')
+par(mfrow=c(1,1))
+```
+Also here heteroscedasticity. If the m.l.r.m. was the final goal, some transformations would be done.
+```{r}
+pdq_grid = expand.grid(
+  p = 0:2, 
+  d = 1,    
+  q = 0:2,
+  P = 0:1, 
+  D = 1,    
+  Q = 0:1
+)
+# Grid search
+set.seed(123)
+grid_results = grid_search_arima(
+  df = df,
+  target_var = "electric",
+  selected_vars = selected_vars_el,
+  pdq_grid = pdq_grid
+)
+cat("\nTop 5 w.r.t. AIC :\n")
+print(head(grid_results, 5))
+
+best_params <- grid_results[1, ]
+cat("\nParams:\n")
+print(best_params)
+
+```
+```{r}
+#rolling w. 
+electric_result = expanding_window_arimax(
+  df = df,
+  target_var = "electric",
+  selected_vars = selected_vars_el,
+  order = c(best_params$p, best_params$d, best_params$q),
+  seasonal = list(order = c(best_params$P, best_params$D, best_params$Q), period = 4)
+)
+
+```
+Here we selected double differentiation(seasonal+non-seasonal)
+```{r}
+checkresiduals(electric_result$model)
+tsdisplay(electric_result$model$residuals)
+summary(electric_result$model)
+```
+```{r}
+#check for uk_petrol
+cor(df$uk_petrol, df$elec_consumption)
+cor(df$uk_petrol, df$charges)
+cor(df$uk_petrol, df$cpi_energy)
+vif(lm(log(electric) ~ ., data = df_reduced_el))
+sqrt(diag(vcov(electric_result$model)))
+summary(df$uk_petrol)
+sd(df$uk_petrol)
+```
+Regarding the variable uk_petrol, its estimated coefficient is very small, and the associated standard error is approximately 2.4e-05, which initially appeared as zero due to formatting in the model summary.
+Despite its small magnitude, the se is not zero, and the coefficient remains statistically significant, as confirmed by the ratio of coefficient to standard error (t-value ≈ 4).
+Additionally, the variable exhibits reasonable variability (SD ≈ 161.6) and shows no signs of multicollinearity, as indicated by its low VIF value (≈ 1.35) and low pairwise correlations with other predictors.
+Therefore, uk_petrol was retained in the final ARIMAX model, as it contributes marginally but significantly to improving the model fit, without causing numerical instability or collinearity concerns.
+
+```{r}
+# FORECAST 
+#hyb
+future_hyb <- forecast_predictors(df, selected_vars_hyb, n_future = 5)
+xreg_future_hyb <- as.matrix(future_hyb)
+
+model_hyb_final <- Arima(
+  log(df$hybrid),
+  order = c(1, 1, 0),
+  xreg = as.matrix(df[, selected_vars_hyb])
+)
+
+forecast_hyb_obj <- forecast(
+  model_hyb_final, 
+  xreg = xreg_future_hyb, 
+  h = 5,
+  level = c(80, 95)
+)
+
+forecast_hyb_df <- forecast_to_dataframe(forecast_hyb_obj) %>%
+  mutate(across(everything(), exp))
+
+#el
+future_el <- forecast_predictors(df, selected_vars_el, n_future = 5)
+xreg_future_el <- as.matrix(future_el)
+
+model_el_final <- Arima(
+  log(df$electric),
+  order = c(best_params$p, best_params$d, best_params$q),
+  seasonal = list(order = c(best_params$P, best_params$D, best_params$Q), period = 4),
+  xreg = as.matrix(df[, selected_vars_el])
+)
+
+forecast_el_obj <- forecast(
+  model_el_final, 
+  xreg = xreg_future_el, 
+  h = 5,
+  level = c(80, 95)
+)
+
+forecast_el_df <- forecast_to_dataframe(forecast_el_obj) %>%
+  mutate(across(everything(), exp))
+
+
+```
+
+```{r}
+# Plot  hybrid
+hybrid_plot <- plot_forecast(
+  df$hybrid, 
+  forecast_hyb_df, 
+  "Forecast hyb"
+)
+print(hybrid_plot)
+
+# Plot  electric
+electric_plot <- plot_forecast(
+  df$electric, 
+  forecast_el_df, 
+  "Forecast El"
+)
+print(electric_plot)
+future_preds_df <- as.data.frame(future_hyb) %>%
+  mutate(Quarter = seq(as.yearqtr(tail(df$quarter, 1)) + 0.25, by = 0.25, length.out = 5))
+melted_preds <- tidyr::gather(future_preds_df, key = "Variable", value = "Value", -Quarter)
+ggplot(melted_preds, aes(x = Quarter, y = Value, color = Variable)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  scale_x_yearqtr(format = "%Y Q%q") +
+  labs(title = "Future predictors projection", y = "Value") +
+  theme_minimal() +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 2) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+```{r}
+#  PERFORMANCE 
+hybrid_metrics <- data.frame(
+  RMSE = sqrt(mean((hybrid_result$actuals - hybrid_result$forecasts)^2)),
+  MAE = mean(abs(hybrid_result$actuals - hybrid_result$forecasts)),
+  MAPE = mean(abs((hybrid_result$actuals - hybrid_result$forecasts)/hybrid_result$actuals)*100)
+)
+electric_metrics <- data.frame(
+  RMSE = sqrt(mean((electric_result$actuals - electric_result$forecasts)^2)),
+  MAE = mean(abs(electric_result$actuals - electric_result$forecasts)),
+  MAPE = mean(abs((electric_result$actuals - electric_result$forecasts)/electric_result$actuals)*100)
+)
+cat("\nPerformance HYBRID:\n")
+print(hybrid_metrics)
+
+cat("\nPerformance ELECTRIC:\n")
+print(electric_metrics)
+
+cat("\nDiagnostic HYBRID:\n")
+checkresiduals(hybrid_result$model)
+tsdisplay(hybrid_result$model$residuals)
+
+cat("\nDiagnostic ELECTRIC:\n")
+checkresiduals(electric_result$model)
+tsdisplay(electric_result$model$residuals)
+
+
+```
+#BASS
+
+To avoid mistake we restore the data
+```{r}
+rm(list=ls())
+library(DIMORA)
+electric_Uk <- ts(
+  c(5.664, 5.836, 6.156, 6.274, 6.574, 6.739, 6.942, 7.045,
+    7.282, 7.794, 6.094, 6.816, 7.447, 8.200, 8.469, 8.979,
+    9.846, 10.972, 11.173, 11.874, 12.477, 13.695, 14.352, 15.293,
+    15.745, 17.234, 18.206, 19.422, 20.988, 23.569, 26.484, 32.334,
+    40.178, 51.888, 59.835, 84.080, 115.896, 139.511, 167.214, 196.287,
+    240.619, 282.317, 313.555, 350.134, 415.145, 463.688, 514.090, 566.842,
+    611.410, 659.014, 702.820),
+  start = c(2011, 4), frequency = 4
+)
+
+hybrid_uk <- ts(
+  c(12, 26, 36, 52, 91, 134, 144, 158, 190, 204, 221, 243, 263, 297, 410, 515,
+    594, 670, 716, 771, 812, 831, 829, 819, 854, 1038, 1219, 1479, 1732, 1911,
+    2457, 3455, 4217, 4837, 5180, 5852, 6411, 6679, 6814, 6681, 6434, 6296,
+    6101, 5777, 5325, 4917),
+  start = c(2013, 1), frequency = 4
+)
+
+electric_Uk <- window(electric_Uk, start=c(2016, 1))
+hybrid_uk <- window(hybrid_uk, start=c(2016, 1))
+```
+
+Now we create the instantaneous data
+```{r}
+electric_instantaneous <- diff(electric_Uk)
+electric_instantaneous <- pmax(electric_instantaneous, 0)
+
+hybrid_instantaneous <- diff(hybrid_uk)
+hybrid_instantaneous <- pmax(hybrid_instantaneous, 0)
+
+electric_instantaneous <- make.instantaneous(electric_Uk)
+hybrid_instantaneous <- make.instantaneous(hybrid_uk)
+
+electric_instantaneous <- pmax(electric_instantaneous, 0)
+hybrid_instantaneous <- pmax(hybrid_instantaneous, 0)
+```
+
+Start with both of the Bass model
+```{r}
+bass_model_electric <- BM(electric_instantaneous)
+checkresiduals(bass_model_electric)
+summary(bass_model_electric)
+  
+```
+
+```{r}
+bass_model_hybrid <- BM(hybrid_instantaneous)
+checkresiduals(bass_model_hybrid)
+summary(bass_model_hybrid)
+```
+
+```{r}
+residuals_electric <- residuals(bass_model_electric)
+residuals_hybrid <- residuals(bass_model_hybrid)
+```
+
+We search with the Grid Search the best model
+```{r}
+grid_search_sarima <- function(residuals) {
+  best_models <- data.frame(AIC=double(), Model=character(), Model_Fit=I(list()), Residuals=I(list()), stringsAsFactors=FALSE)
+  
+  residuals_clean <- residuals[!is.na(residuals) & abs(residuals) < 1e6]
+  
+  for (p in 0:3) {
+    for (d in 0:1) {
+      for (q in 0:3) {
+        for (P in 0:1) {
+          for (D in 0:1) {
+            for (Q in 0:1) {
+              try({
+                fit <- arima(residuals_clean, order=c(p, d, q), seasonal=list(order=c(P, D, Q), period=4))
+                
+                if (!is.null(fit)) {
+                  aic_value <- AIC(fit)
+                  check_result <- checkresiduals(fit)
+                  
+                  if (check_result$p.value > 0.05) {
+                    best_models <- rbind(best_models, data.frame(AIC=aic_value,
+                      Model=paste(p, d, q, P, D, Q, sep="-"),
+                      Model_Fit=I(list(fit)),
+                      Residuals=I(list(residuals(fit)))))
+                  }
+                }
+              }, silent=TRUE)
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  best_models <- best_models[order(best_models$AIC), ]
+  return(best_models[1:5, ])
+}
+
+residuals_bass_electric <- residuals(bass_model_electric)
+```
+We select this two models to manage te residuals
+```{r}
+arima_model_1 <- arima(residuals_bass_electric, order = c(2, 0, 0))
+arima_model_2 <- arima(residuals_bass_electric, order = c(2, 0, 1))
+
+checkresiduals(arima_model_1)
+checkresiduals(arima_model_2)
+
+residuals_hybrid <- residuals(bass_model_hybrid)
+
+model1 <- arima(residuals_hybrid, order=c(0,1,1))
+model2 <- arima(residuals_hybrid, order=c(1,1,2))
+model3 <- arima(residuals_hybrid, order=c(2,1,2))
+checkresiduals(model1)
+```
+```{r}
+cumulative_electric <- cumsum(electric_instantaneous)
+n_forecast <- 15
+forecast_residuals <- forecast(arima_model_1, h = n_forecast)
+
+forecast_cumulative_electric <- tail(cumulative_electric, n=1) + cumsum(forecast_residuals$mean)
+
+fitted_values <- fitted(bass_model_electric) + residuals(arima_model_1)
+
+total_time <- length(cumulative_electric) + n_forecast
+forecast_dates_electric <- seq(from = end(cumulative_electric)[1] + 0.25, by = 0.25, length.out = n_forecast)
+
+```
+The Plot:
+```{r}
+plot(cumulative_electric, col="black", lwd=2, type="o", main="Electric Data: Cumulative Original, Fitted & Forecast", 
+  ylab="Cumulative Values", xlab="Time", xlim=c(1, total_time), 
+  ylim=c(min(cumulative_electric, forecast_cumulative_electric) - 10, max(cumulative_electric, forecast_cumulative_electric) + 10))
+
+lines(fitted_values, col="blue", lwd=2)
+```
+Now we do the same for the hybrid data
+```{r}
+cumulative_hybrid <- cumsum(hybrid_instantaneous)
+
+n_forecast <- 15
+forecast_residuals_hybrid <- forecast(model1, h = n_forecast)
+
+forecast_cumulative_hybrid <- tail(cumulative_hybrid, n=1) + cumsum(forecast_residuals_hybrid$mean)
+
+fitted_values_hybrid <- fitted(bass_model_hybrid) + residuals(model1)
+
+total_time_hybrid <- length(cumulative_hybrid) + n_forecast
+forecast_dates_hybrid <- seq(from = end(cumulative_hybrid)[1] + 0.25, by = 0.25, length.out = n_forecast)
+```
+Plot:
+```{r}
+
+plot(cumulative_hybrid, col="black", lwd=2, type="o", main="Hybrid Data: Cumulative Original, Fitted & Forecast", 
+  ylab="Cumulative Values", xlab="Time", xlim=c(1, total_time_hybrid), 
+  ylim=c(min(cumulative_hybrid, forecast_cumulative_hybrid) - 10, max(cumulative_hybrid, forecast_cumulative_hybrid) + 10))
+
+
+lines(fitted_values_hybrid, col="blue", lwd=2)
+
+lines(forecast_dates_hybrid, forecast_cumulative_hybrid, col="red", lwd=2, type="o")
+
+legend("topleft", legend=c("Original Hybrid Cumulative", "Fitted Hybrid + ARIMA Residuals", "Hybrid Forecast"), 
+  col=c("black", "blue", "red"), lwd=2, cex=0.5)
+```
+3 useful Functions to: 1. Estimated the model, 2. Function to compute RSS 3. Function to estimated the parameters
+```{r}
+bass_model <- function(S, p, q, M) {
+  n <- length(S)
+  S_pred <- numeric(n)
+  S_pred[1] <- S[1]
+  for (t in 2:n) {
+    S_pred[t] <- S_pred[t-1] + (p + q * S_pred[t-1] / M) * (M - S_pred[t-1])
+  }
+  return(S_pred)
+}
+
+rss <- function(params, S) {
+  p <- params[1]
+  q <- params[2]
+  M <- params[3]
+  S_pred <- bass_model(S, p, q, M)
+  return(sum((S - S_pred)^2)) 
+}
+
+estimate_bass_params <- function(S) {
+  start_params <- c(p = 0.01, q = 0.01, M = max(S))  
+  result <- optim(start_params, rss, S = S, method = "L-BFGS-B", lower = c(0, 0, max(S)*0.5), upper = c(1, 1, max(S)*1.5))
+  return(result$par)
+}
+```
+Estimation of the parameters to both of the type
+```{r}
+electric_params <- estimate_bass_params(electric_Uk)
+cat("Estimated Parameters for Electric Model (p, q, M):", electric_params, "\n")
+
+hybrid_params <- estimate_bass_params(hybrid_uk)
+
+
+cat("Estimated Parameters for Hybrid Model (p, q, M):", hybrid_params, "\n")
+electric_fitted <- bass_model(electric_Uk, electric_params[1], electric_params[2], electric_params[3])
+
+
+hybrid_fitted <- bass_model(hybrid_uk, hybrid_params[1], hybrid_params[2], hybrid_params[3])
+
+cat("\nSummary of Electric Model:\n")
+summary(lm(electric_fitted ~ electric_Uk))
+
+cat("\nSummary of Hybrid Model:\n")
+summary(lm(hybrid_fitted ~ hybrid_uk))
+```
+
+Now we compute the preliminar estimation:
+
+```{r}
+instantaneous_electric_Uk <- diff(electric_Uk)
+instantaneous_electric_Uk[instantaneous_electric_Uk < 0] <- 0 
+
+BM_instantaneous <- BM(instantaneous_electric_Uk, display = FALSE)
+
+prelimestimates <- c(BM_instantaneous$Estimate[1,1], BM_instantaneous$Estimate[2,1], BM_instantaneous$Estimate[3,1], 20, -0.05, 0.05)
+```
+And try also with an exponential shock
+```{r}
+M_GBM_instantaneous <- GBM(instantaneous_electric_Uk, shock = "exp", nshock = 1,
+  prelimestimates = prelimestimates) 
+
+summary(M_GBM_instantaneous)
+
+plot.Dimora(M_GBM_instantaneous, oos = 20) 
+checkresiduals(M_GBM_instantaneous)
+tsdisplay(M_GBM_instantaneous$residuals)
+residui_GBM_instantaneous <- residuals(M_GBM_instantaneous)
+arima_model <- arima(residui_GBM_instantaneous, order = c(2, 0, 1))
+checkresiduals(arima_model)
+```
+
+Electric car licenses were not negative in instantaneous data. For this reason we evaluate also the GBM there. 
+But, we cannot compare them since we have only one and not both models. GBM on hybrid gave bad results and we've chosen to keep only the Bass standard model.
+
+
+
+
+
